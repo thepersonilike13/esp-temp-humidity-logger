@@ -1,0 +1,6 @@
+Flask==3.0.3
+flask-pymongo==2.3.0
+python-dotenv==1.0.1
+pytz==2024.1
+dnspython==2.6.1
+email-validator==2.1.1
