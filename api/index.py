@@ -215,18 +215,15 @@ from email.mime.multipart import MIMEMultipart
 def send_alert_email(subject, body):
     sender = os.getenv("EMAIL_USER")
     password = os.getenv("EMAIL_PASS")
-    recipients_raw = os.getenv("EMAIL_TO")
+    recipient = os.getenv("EMAIL_TO")
 
-    if not all([sender, password, recipients_raw]):
-        print("❌ Missing email config")
+    if not all([sender, password, recipient]):
+        print("❌ Missing email credentials in environment variables")
         return False
-
-    # Handle multiple recipients
-    recipients = [email.strip() for email in recipients_raw.split(",")]
 
     msg = MIMEMultipart()
     msg["From"] = sender
-    msg["To"] = ", ".join(recipients)  # For email headers
+    msg["To"] = recipient
     msg["Subject"] = subject
     msg.attach(MIMEText(body, "plain"))
 
@@ -234,9 +231,9 @@ def send_alert_email(subject, body):
         server = smtplib.SMTP("smtp.gmail.com", 587)
         server.starttls()
         server.login(sender, password)
-        server.sendmail(sender, recipients, msg.as_string())
+        server.sendmail(sender, recipient, msg.as_string())
         server.quit()
-        print("✅ Alert email sent to:", recipients)
+        print("✅ Alert email sent")
         return True
     except Exception as e:
         print("❌ Failed to send email:", e)
