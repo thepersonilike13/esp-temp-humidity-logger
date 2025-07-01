@@ -243,6 +243,10 @@ def send_alert_email(subject, body):
     except Exception as e:
         print("❌ Failed to send email:", e)
         return False
+    
+
+
+
 @app.route("/alert", methods=["POST"])
 def receive_alert():
     try:
@@ -288,3 +292,44 @@ Take necessary action immediately.
 
 
 
+
+@app.route('/send-summary-email', methods=['POST'])
+def send_summary_email():
+    try:
+        data = request.get_json()
+
+        required_fields = ['device_id', 'average_temp', 'average_humidity', 'data_points', 'readings']
+        if not all(field in data for field in required_fields):
+            return jsonify({"error": "Missing one or more required fields"}), 400
+
+        device_id = data['device_id']
+        avg_temp = data['average_temp']
+        avg_humidity = data['average_humidity']
+        data_points = data['data_points']
+        readings = data['readings']  # List of readings
+
+        # Create email body
+        body = (
+            f"📊 Summary for device **{device_id}** (Last Hour)\n\n"
+            f"🌡️ Average Temperature: {avg_temp:.1f} °C\n"
+            f"💧 Average Humidity: {avg_humidity:.1f} %\n"
+            f"📈 Data Points: {data_points}\n\n"
+            f"--- Raw Readings ---\n"
+        )
+
+        for r in readings:
+            ts = r.get("timestamp", "N/A")
+            temp = r.get("temp", "N/A")
+            hum = r.get("humidity", "N/A")
+            body += f"• {ts} → Temp: {temp}°C, Humidity: {hum}%\n"
+
+        subject = f"📡 Hourly Summary for {device_id}"
+        success = send_alert_email(subject, body)
+
+        if success:
+            return jsonify({"status": "Email sent with full data"}), 200
+        else:
+            return jsonify({"error": "Failed to send email"}), 500
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
