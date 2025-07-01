@@ -4,3 +4,4 @@ python-dotenv==1.0.1
 pytz==2024.1
 dnspython==2.6.1
 email-validator==2.1.1
+flask_cors==4.0.0

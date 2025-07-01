@@ -6,10 +6,12 @@ from dotenv import load_dotenv
 from datetime import datetime, timedelta
 import pytz
 import os
+from flask_cors import CORS
 
 load_dotenv()
 
 app = Flask(__name__)
+CORS(app)
 
 # MongoDB Setup
 MONGO_URI = os.getenv("MONGO_URI")
@@ -18,46 +20,40 @@ db = client["Sensor_data"]  # Replace with your DB name
 collection = db["readings"]  # Replace with your collection name
 
 # Global cache
-latest_data = None
+# Global state
+is_device_alive = True 
+last_heartbeat_time = datetime.now(pytz.UTC)
 
-@app.route("/health", methods=["GET"])
+# @app.route('/heartbeat', methods=['POST'])
+# def heartbeat():
+#     global is_device_alive, last_heartbeat_time
+#     is_device_alive = True
+#     last_heartbeat_time = datetime.now(pytz.UTC)
+#     return jsonify({"status": "heartbeat_received"}), 200
+
+# === 2. HEALTH API ===
+@app.route('/health', methods=['GET'])
 def health():
-    global latest_data
+    global is_device_alive, last_heartbeat_time
 
-    # Fetch latest from cache or DB
-    if not latest_data:
-        doc = collection.find_one(sort=[("timestamp", -1)])
-        if doc:
-            latest_data = {
-                "device_id": doc.get("device_id"),
-                "temp": doc.get("temp"),
-                "humidity": doc.get("humidity"),
-                "timestamp": doc.get("timestamp"),
-            }
-
-    if not latest_data:
-        return jsonify({"status": "no_data"}), 404
-
-    # Check freshness
     now = datetime.now(pytz.UTC)
-    last_time = latest_data["timestamp"]
-    elapsed = now - last_time
-    minutes = elapsed.total_seconds() / 60
 
-    if minutes <= 15:
+    if not last_heartbeat_time:
+        return jsonify({"status": "no_heartbeat"}), 404
+
+    # Check freshness of last heartbeat
+    if now - last_heartbeat_time <= timedelta(hours=1):
         return jsonify({
             "status": "ok",
-            "last_reading": latest_data,
-            "minutes_ago": round(minutes, 2)
+            "last_heartbeat": last_heartbeat_time.isoformat(),
+            "minutes_ago": round((now - last_heartbeat_time).total_seconds() / 60, 2)
         }), 200
     else:
         return jsonify({
             "status": "stale",
-            "last_reading": latest_data,
-            "minutes_ago": round(minutes, 2)
+            "last_heartbeat": last_heartbeat_time.isoformat(),
+            "minutes_ago": round((now - last_heartbeat_time).total_seconds() / 60, 2)
         }), 503
-
-# Required for Vercel
 
 @app.route("/logdata", methods=["POST"])
 def logdata():
@@ -93,7 +89,8 @@ def latest():
 
         if not doc:
             return jsonify({"status": "no_data"}), 404
-
+        # Convert timestamp to ISO format
+        
         return jsonify({
             "status": "success",
             "latest": {
@@ -212,18 +209,26 @@ def test_connection():
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+
 def send_alert_email(subject, body):
     sender = os.getenv("EMAIL_USER")
     password = os.getenv("EMAIL_PASS")
-    recipient = os.getenv("EMAIL_TO")
+    recipients_raw = os.getenv("EMAIL_TO")
 
-    if not all([sender, password, recipient]):
+    if not all([sender, password, recipients_raw]):
         print("❌ Missing email credentials in environment variables")
+        return False
+
+    # Convert comma-separated recipients to list
+    recipients = [email.strip() for email in recipients_raw.split(",") if email.strip()]
+
+    if not recipients:
+        print("❌ No valid recipient email addresses found")
         return False
 
     msg = MIMEMultipart()
     msg["From"] = sender
-    msg["To"] = recipient
+    msg["To"] = ", ".join(recipients)  # For email headers
     msg["Subject"] = subject
     msg.attach(MIMEText(body, "plain"))
 
@@ -231,15 +236,13 @@ def send_alert_email(subject, body):
         server = smtplib.SMTP("smtp.gmail.com", 587)
         server.starttls()
         server.login(sender, password)
-        server.sendmail(sender, recipient, msg.as_string())
+        server.sendmail(sender, recipients, msg.as_string())  # Actual recipients
         server.quit()
-        print("✅ Alert email sent")
+        print(f"✅ Alert email sent to: {', '.join(recipients)}")
         return True
     except Exception as e:
         print("❌ Failed to send email:", e)
         return False
-
-
 @app.route("/alert", methods=["POST"])
 def receive_alert():
     try:
@@ -285,4 +288,3 @@ Take necessary action immediately.
 
 
 
-app = app
